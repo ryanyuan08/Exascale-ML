@@ -38,7 +38,7 @@ This makes it useful for understanding shock waves, traffic flow, and basic flui
 
 ### Prerequisites
 - CMake 3.10 or higher
-- C++17 compatible compiler (GCC, Clang, or MSVC)
+- C++20 compatible compiler (GCC, Clang, or MSVC)
 - Python 3.x (for visualization)
 
 ### Build Instructions
@@ -277,9 +277,7 @@ This creates:
 ```
 training_data/
 ├── sample_000000/
-│   ├── timestep_00000.csv
-│   ├── timestep_00001.csv
-│   ├── ...
+│   ├── solution.bin
 │   └── metadata.json          # IC parameters and solver config
 ├── sample_000001/
 │   └── ...
@@ -295,12 +293,22 @@ Each `metadata.json` contains:
 Example metadata structure:
 ```json
 {
+  "bias": 0.0,
   "config": {
     "n": 5,
     "domain_length": 10.0,
     "amp_min": -1.0,
     "amp_max": 1.0,
     ...
+  },
+  "solver": {
+    "domain_length": 10.0,
+    "kinematic_viscosity": 0.01,
+    "num_domain_points": 1000,
+    "scheme_name": "LaxWendroff",
+    "spatial_step_size": 0.01,
+    "time_step_size": 0.000001,
+    "time_steps": 100000
   },
   "terms": [
     {
@@ -309,15 +317,7 @@ Example metadata structure:
       "phase_shift": 2.3
     },
     ...
-  ],
-  "bias": 0.0,
-  "solver": {
-    "time_steps": 100000,
-    "time_step_size": 0.000001,
-    "num_domain_points": 1000,
-    "spatial_step_size": 0.01,
-    "scheme_name": "LaxWendroff"
-  }
+  ]
 }
 ```
 
@@ -419,9 +419,8 @@ The visualizer searches for data in `training_data/<folder_name>` by default.
 ```
 data/
 └── [run_name]/
-    ├── timestep_00000.csv
-    ├── timestep_00010.csv
-    └── ...
+    ├── solution.bin
+    └── metadata.json
 ```
 
 ### Training Data (`training_data/`)
@@ -429,33 +428,45 @@ data/
 ```
 training_data/
 └── sample_XXXXXX/
-    ├── timestep_00000.csv
-    ├── timestep_00001.csv
-    ├── ...
+    ├── solution.bin
     └── metadata.json
 ```
 
-### CSV Format
+### Binary Solution Format
 
-Each CSV file contains:
-```csv
-x,u
-0.0,1.0
-0.01,1.02
-0.02,1.05
-...
-```
+- Simulation results are stored in `solution.bin`.
+
+- The file contains a contiguous array of double values:
+
+  [num_timesteps × num_domain_points]
+
+- Data is written sequentially by timestep.
+Each timestep contains `num_domain_points` velocity values.
+
+- Metadata needed to interpret the binary file
+(e.g., num_timesteps, num_domain_points, dx)
+is stored in `metadata.json`.
 
 ### Metadata JSON Format
 
 ```json
 {
+  "bias": 0.0,
   "config": {
     "n": 5,
     "domain_length": 10.0,
     "amp_min": -1.0,
     "amp_max": 1.0,
     ...
+  },
+  "solver": {
+    "domain_length": 10.0,
+    "kinematic_viscosity": 0.01,
+    "num_domain_points": 1000,
+    "scheme_name": "LaxWendroff",
+    "spatial_step_size": 0.01,
+    "time_step_size": 0.000001,
+    "time_steps": 100000
   },
   "terms": [
     {
@@ -464,15 +475,7 @@ x,u
       "phase_shift": 2.3
     },
     ...
-  ],
-  "bias": 0.0,
-  "solver": {
-    "time_steps": 100000,
-    "time_step_size": 0.000001,
-    "num_domain_points": 1000,
-    "spatial_step_size": 0.01,
-    "scheme_name": "LaxWendroff"
-  }
+  ]
 }
 ```
 
