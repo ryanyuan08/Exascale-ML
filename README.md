@@ -25,41 +25,56 @@ This makes it useful for understanding shock waves, traffic flow, and basic flui
 │   ├── initial_condition_generator.cpp # Random IC implementation
 │   └── schemes/
 │       ├── ftcs.cpp                   # Forward-Time Central-Space scheme
+│       ├── ftcs_conservative.cpp      # Conservative variant of FTCS
+│       ├── godunov.cpp                # Godunov scheme
 │       └── lax_wendroff.cpp          # Lax-Wendroff scheme
+├── neuralnet/
+│   ├── train.py                       # Neural network training
+│   ├── generate_feature_matrices.py   # Builds the training feature matrices
+│   └── ...
+├── scripts/
+│   ├── setup_deps.py                  # Installs all dependencies into lib/
+│   └── start_training.py              # Runs the training pipeline
 ├── visualizer/
 │   └── visualize.py                   # Interactive visualization tool
 ├── CMakeLists.txt                     # Build configuration
-├── requirements.txt                   # Python dependencies
+├── requirements.txt                   # Python dependencies (used by setup_deps.py)
 ├── data/                              # Output directory for experiments
+├── lib/                               # Dependencies installed by setup_deps.py
 └── training_data/                     # Output directory for training samples
 ```
 
 ## Building the Project
 
 ### Prerequisites
-- CMake 3.10 or higher
+- CMake 3.14 or higher
 - C++20 compatible compiler (GCC, Clang, or MSVC)
-- Python 3.x (for visualization)
+- Python 3.x with pip (to install the dependencies)
 
 ### Build Instructions
 
-1. Create a build directory and navigate to it:
+1. Install the dependencies into `lib/`. This downloads torch (CPU) for the C++ build and all Python packages used for training and visualization:
+```bash
+python3 scripts/setup_deps.py
+```
+
+2. Create a build directory and navigate to it:
 ```bash
 mkdir build
 cd build
 ```
 
-2. Generate the build files with CMake:
+3. Generate the build files with CMake:
 ```bash
 cmake ..
 ```
 
-3. Compile the project:
+4. Compile the project:
 ```bash
 make
 ```
 
-4. Run the executables:
+5. Run the executables:
 ```bash
 # Run example simulations
 ./burgers
@@ -321,6 +336,21 @@ Example metadata structure:
 }
 ```
 
+## Training the Neural Network
+
+The neural network learns to predict the artificial viscosity coefficient used by the FTCS scheme. The whole pipeline is run with one command:
+
+```bash
+python3 scripts/start_training.py
+```
+
+This runs two stages, with `PYTHONPATH` pointed at the bundled dependencies in `lib/python` (no system-wide install needed):
+
+1. `neuralnet/generate_feature_matrices.py` — builds the feature matrices (`X`, `y`) from the training data produced by `training_data_generator`.
+2. `neuralnet/train.py` — trains the model and exports a TorchScript model to `neuralnet/output/model.pt`.
+
+The exported `model.pt` is loaded at runtime by the FTCS scheme in NN mode (see the `MODEL_PATH` define in `CMakeLists.txt`).
+
 ## How the Solver Works
 
 ### Burgers' Equation
@@ -382,24 +412,14 @@ The interactive visualizer allows you to play through simulation timesteps:
 
 ### Setup
 
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Usage
+The visualizer uses the same bundled dependencies as training (installed by `scripts/setup_deps.py`); no separate install is needed:
 
 ```bash
-# Visualize data
-python visualizer/visualize.py <folder_name> --speed 1
+PYTHONPATH=lib/python python3 visualizer/visualize.py <folder_name> --speed 1
 
 # Examples:
-python visualizer/visualize.py data/step_function --speed 2
-python visualizer/visualize.py training_data/sample_000000 --speed 0.5
+PYTHONPATH=lib/python python3 visualizer/visualize.py data/step_function --speed 2
+PYTHONPATH=lib/python python3 visualizer/visualize.py training_data/sample_000000 --speed 0.5
 ```
 
 **Controls:**

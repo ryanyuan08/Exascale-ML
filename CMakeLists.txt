@@ -1,39 +1,43 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(BurgersEquationSolver VERSION 1.0 DESCRIPTION "Basic 1d Burgers Equation Solver" LANGUAGES CXX)
+project(
+    BurgersEquationSolver
+    VERSION 1.0
+    DESCRIPTION "Basic 1d Burgers Equation Solver"
+    LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Enable M_PI constant
-add_compile_definitions(_USE_MATH_DEFINES)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# libtorch
-set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/lib/libtorch")
+add_compile_definitions(
+    MODEL_PATH="${CMAKE_SOURCE_DIR}/neuralnet/output/model.pt")
+
+include(FetchContent)
+
+set(_local_torch_dir "${PROJECT_SOURCE_DIR}/lib/cpp/python/torch")
+set(_torch_config "${_local_torch_dir}/share/cmake/Torch/TorchConfig.cmake")
+
+if(NOT EXISTS "${_torch_config}")
+    message(
+        FATAL_ERROR
+            "torch not found at ${_local_torch_dir}. "
+            "Install it first with:\n" "    python3 scripts/setup_deps.py")
+endif()
+
+set(Torch_DIR "${_local_torch_dir}/share/cmake/Torch")
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
-# nlohmann/json
-include(FetchContent)
-FetchContent_Declare(json
+FetchContent_Declare(
+    json
     URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-    DOWNLOAD_EXTRACT_TIMESTAMP true
-)
+        DOWNLOAD_EXTRACT_TIMESTAMP true)
 FetchContent_MakeAvailable(json)
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
-
-add_compile_definitions(MODEL_PATH="${CMAKE_SOURCE_DIR}/neuralnet/output/model.pt")
-
-if (MSVC)
-    add_compile_options(/W4)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-add_compile_definitions(_USE_MATH_DEFINES)
-
-set(SHARED_SOURCES
+add_library(
+    burgers_core STATIC
     src/burgers.cpp
     src/initial_condition_generator.cpp
     src/math_utils.cpp
@@ -42,18 +46,29 @@ set(SHARED_SOURCES
     src/schemes/lax_wendroff.cpp
     src/schemes/godunov.cpp
     src/schemes/ftcs_conservative.cpp
-)
+    include/burger_scheme.h
+    include/burgers.h
+    include/initial_condition_generator.h
+    include/math_utils.h
+    include/metadata_writer.h
+    include/nn.h)
 
-# regular experimental solver
-add_executable(burgers
-    src/main.cpp
-    ${SHARED_SOURCES}
-)
-target_link_libraries(burgers PRIVATE nlohmann_json::nlohmann_json torch)
+target_include_directories(burgers_core PUBLIC "${PROJECT_SOURCE_DIR}/include"
+                                               "${PROJECT_BINARY_DIR}/include")
 
-# program to create our training data
-add_executable(training_data_generator
-    src/training_data_generator.cpp
-    ${SHARED_SOURCES}
-)
-target_link_libraries(training_data_generator PRIVATE nlohmann_json::nlohmann_json torch)
+# Enable M_PI.
+target_compile_definitions(burgers_core PUBLIC _USE_MATH_DEFINES)
+
+if(MSVC)
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+target_link_libraries(burgers_core PUBLIC torch nlohmann_json::nlohmann_json)
+
+add_executable(burgers src/main.cpp)
+target_link_libraries(burgers PRIVATE burgers_core)
+
+add_executable(training_data_generator src/training_data_generator.cpp)
+target_link_libraries(training_data_generator PRIVATE burgers_core)
