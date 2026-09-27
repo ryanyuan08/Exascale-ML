@@ -1,4 +1,5 @@
 numpy
+joblib
 pandas
 matplotlib
 tqdm
