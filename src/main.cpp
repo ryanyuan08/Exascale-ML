@@ -213,18 +213,28 @@ int main() {
     };
 
     for (auto& [dx, dx_str] : nn_dx_sweep) {
-        SolverConfig nn_dx_config = {
+        SolverConfig dx_config = {
             .kinematic_viscosity = 0.8,
             .time_steps = 100000,
             .domain_length = 20.0,
             .spatial_step_size = dx,
         };
-        std::string name = "nn_dx_" + dx_str;
-        BurgersSolver1d nn_dx_solver(std::make_unique<FTCS>(true), nn_dx_config, dx_sweep_ic);
+
+        // plain FTCS baseline with the same grid / IC but no NN call
+        std::string ftcs_name = "ftcs_dx_" + dx_str;
+        BurgersSolver1d ftcs_dx_solver(std::make_unique<FTCS>(), dx_config, dx_sweep_ic);
+        ftcs_dx_solver.solve();
+        ftcs_dx_solver.saveBinarySolution("../data", ftcs_name);
+        MetadataWriter(ftcs_dx_solver, dx_sweep_ic).write("../data/" + ftcs_name + "/metadata.json");
+        std::cout << ftcs_name << " nan detected: " << ftcs_dx_solver.wasNanDetected() << std::endl;
+
+        // NN-FTCS on the same grid / IC
+        std::string nn_name = "nn_dx_" + dx_str;
+        BurgersSolver1d nn_dx_solver(std::make_unique<FTCS>(true), dx_config, dx_sweep_ic);
         nn_dx_solver.solve();
-        nn_dx_solver.saveBinarySolution("../data", name);
-        MetadataWriter(nn_dx_solver, dx_sweep_ic).write("../data/" + name + "/metadata.json");
-        std::cout << name << " nan detected: " << nn_dx_solver.wasNanDetected() << std::endl;
+        nn_dx_solver.saveBinarySolution("../data", nn_name);
+        MetadataWriter(nn_dx_solver, dx_sweep_ic).write("../data/" + nn_name + "/metadata.json");
+        std::cout << nn_name << " nan detected: " << nn_dx_solver.wasNanDetected() << std::endl;
     }
 
 }

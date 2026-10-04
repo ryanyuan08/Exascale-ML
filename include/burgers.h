@@ -61,6 +61,9 @@ private:
     // the time step size computed during solve() from the stability conditions
     double computed_time_step_size;
 
+    // wall-clock time spent in solve(), in seconds
+    double runtime_seconds = 0.0;
+
     // max absolute value of the initial condition, computed when IC is set
     double max_u = 0.0;
 
@@ -97,6 +100,8 @@ public:
     int getNumDomainPoints() const;
 
     double getSpatialStepSize() const;
+
+    double getRuntimeSeconds() const;
 
     std::string getSchemeName() const;
 };
