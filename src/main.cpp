@@ -143,11 +143,11 @@ int main() {
         
         ftcs.solve();
         ftcs.saveBinarySolution("../data", "ftcs");
-        MetadataWriter(ftcs, f).write("../data/ftcs/metadata.json");
+        MetadataWriter(ftcs, g).write("../data/ftcs/metadata.json");
         
         ftcs_conservative.solve();
         ftcs_conservative.saveBinarySolution("../data", "ftcs_conservative");
-        MetadataWriter(ftcs_conservative, f).write("../data/ftcs_conservative/metadata.json");
+        MetadataWriter(ftcs_conservative, g).write("../data/ftcs_conservative/metadata.json");
     }
 
     if (RUN_NN_TEST) {
