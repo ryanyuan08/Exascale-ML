@@ -1,4 +1,4 @@
 #pragma once
 #include <torch/torch.h>
 
-const int U_RADIUS = 3;
+const int U_RADIUS = 4;
