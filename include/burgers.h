@@ -22,11 +22,13 @@ struct SolverConfig {
 
 class BurgersSolver1d : public IMetadataProvider {
 
-private:
+public:
     // CFL safety factor for the advection stability condition: dt_advection = ALPHA * dx / max_u
     inline static const double ALPHA = 0.4;
     // Safety factor for the explicit diffusion stability condition: dt_diffusion = BETA * dx^2 / nu
     inline static const double BETA = 0.2;
+
+private:
 
     // scheme for solving
     std::unique_ptr<BurgerScheme> scheme;

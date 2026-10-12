@@ -1,29 +1,39 @@
 """Evaluate neural-network vs baseline Burgers' equation solver runs.
 
-Loads every run directory under a data directory (default: ``data/``), compares
-each run's solution to the ``godunov_gt`` ground truth, and reports per-run
-metrics:
+Loads every run directory in one experiment folder, compares each run to an
+accurate Godunov reference that started from the SAME initial wave, and reports
+per-run metrics:
 
   - ``runtime_ms``  : wall-clock solve time recorded in ``metadata.json``
-  - ``err_l2_rel``  : relative L2 error vs godunov_gt (main "solver error")
-  - ``err_mae``     : mean absolute error vs godunov_gt
-  - ``err_max_abs`` : max absolute error vs godunov_gt
+  - ``err_l2_rel``  : relative L2 error vs the reference (main "solver error")
+  - ``err_mae``     : mean absolute error vs the reference
+  - ``err_max_abs`` : max absolute error vs the reference
   - ``err_final_l2_rel`` : relative L2 error at the final matched time
   - neural network improvement: for NN runs, the error reduction relative to
     an otherwise identical non-NN run at the same grid spacing, plus the
     runtime cost/speedup of using the NN.
 
+Choosing the reference: each run is compared with the first reference in
+``--gt`` (default: godunov_gt, then godunov_fine_grain) that has the same
+initial wave and viscosity. So the dx sweep is scored against godunov_gt and the
+NN test against godunov_fine_grain automatically. Runs with no matching
+reference (e.g. the wiki cases) are kept in the CSV but marked
+``ic_matches_reference = False`` and left out of the printed tables.
+
 Solutions live on different grids (different ``dx``, ``dt``, and number of
-points), so each run is interpolated in time and space onto the ground truth
-grid before the error is computed.
+points), so each run is interpolated in time and space onto the reference grid
+before the error is computed.
 
-Writes a CSV (default: ``data/evaluation_results.csv``) and prints comparison
-tables to stdout.
+Experiments: ``./burgers`` saves each experiment in its own folder,
+``data/experiments/<name>/``. Results are written to
+``<folder>/evaluation_results.csv``.
 
-Usage (uses the bundled deps from ``lib/python``):
+Usage (from the repo root, using the bundled deps from ``lib/python``):
 
-    PYTHONPATH=lib/python python3 evaluate.py
-    PYTHONPATH=lib/python python3 evaluate.py --data-dir data --gt godunov_gt
+    PYTHONPATH=lib/python python3 evaluate.py --list                       # show experiments
+    PYTHONPATH=lib/python python3 evaluate.py --experiment nu_0p03_t_0p125 # evaluate one
+    PYTHONPATH=lib/python python3 evaluate.py --all                        # evaluate every experiment
+    PYTHONPATH=lib/python python3 evaluate.py --data-dir data              # any folder of runs
 """
 
 import argparse
@@ -38,7 +48,8 @@ SOLUTION_DATA_FILENAME = "solution.bin"
 METADATA_FILENAME = "metadata.json"
 
 DEFAULT_DATA_DIR = "data"
-DEFAULT_GT_NAME = "godunov_gt"
+EXPERIMENTS_DIR = Path("data") / "experiments"
+DEFAULT_GT_NAMES = ["godunov_gt", "godunov_fine_grain"]
 DEFAULT_NUM_EVAL_TIMES = 2000
 
 
@@ -83,7 +94,8 @@ def load_run(run_dir, name):
         "runtime_ms": runtime_ms,
         "nan_detected": nan_detected,
         "ic_key": ic_key(meta),
-        "ic_matches_gt": None,
+        "ic_matches_reference": None,
+        "reference": None,
         "meta": meta,
         "x": x,
         "time": time,
@@ -195,12 +207,14 @@ def improvement_pct(nn_val, base_val):
     return (base_val - nn_val) / base_val * 100.0
 
 
-def build_row(run, gt, baseline, metrics):
+def build_row(run, gt, baseline, metrics, experiment_name):
     err_l2_rel, err_mae, err_max_abs, err_final_l2_rel = metrics
     row = {
+        "experiment": experiment_name,
         "run_name": run["name"],
         "scheme_name": run["scheme_name"],
         "use_nn": run["use_nn"],
+        "kinematic_viscosity": run["nu"],
         "spatial_step_size": run["dx"],
         "num_domain_points": run["n"],
         "time_steps": run["t"],
@@ -208,7 +222,8 @@ def build_row(run, gt, baseline, metrics):
         "final_time": run["final_time"],
         "runtime_ms": run["runtime_ms"],
         "nan_detected": run["nan_detected"],
-        "ic_matches_gt": run["ic_matches_gt"],
+        "reference_run": gt["name"],
+        "ic_matches_reference": run["ic_matches_reference"],
         "err_l2_rel": err_l2_rel,
         "err_mae": err_mae,
         "err_max_abs": err_max_abs,
@@ -258,9 +273,12 @@ def make_formatter(spec):
     return fmt
 
 
-def print_run_table(df, gt_name):
+def print_run_table(df):
+    matched = df[df["ic_matches_reference"]]
+    skipped = df[~df["ic_matches_reference"]]
     cols = [
         "run_name",
+        "reference_run",
         "scheme_name",
         "use_nn",
         "spatial_step_size",
@@ -273,10 +291,11 @@ def print_run_table(df, gt_name):
         "err_max_abs",
         "err_final_l2_rel",
     ]
-    table = df[cols].sort_values(
-        ["spatial_step_size", "use_nn", "run_name"], ascending=[True, False, True]
+    table = matched[cols].sort_values(
+        ["reference_run", "spatial_step_size", "use_nn", "run_name"],
+        ascending=[True, True, False, True],
     )
-    print("\nPer-run metrics (error vs %s ground truth):" % gt_name)
+    print("\nPer-run metrics (error vs the reference with the same starting wave):")
     print(
         table.to_string(
             index=False,
@@ -293,8 +312,16 @@ def print_run_table(df, gt_name):
     )
 
 
+    if not skipped.empty:
+        print(
+            "\n(not shown: no reference with the same starting wave for "
+            + ", ".join(skipped["run_name"])
+            + "; their errors are in the CSV but are not meaningful)"
+        )
+
+
 def print_improvement_table(df):
-    nn_df = df[df["use_nn"]]
+    nn_df = df[df["use_nn"] & df["ic_matches_reference"]]
     if nn_df.empty:
         print("\nNo NN runs found.")
         return
@@ -330,24 +357,26 @@ def print_improvement_table(df):
     )
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR,
-                        help="directory containing run folders (default: %(default)s)")
-    parser.add_argument("--gt", default=DEFAULT_GT_NAME,
-                        help="name of the ground truth run (default: %(default)s)")
-    parser.add_argument("--output", default=None,
-                        help="CSV output path (default: <data-dir>/evaluation_results.csv)")
-    parser.add_argument("--num-eval-times", type=int, default=DEFAULT_NUM_EVAL_TIMES,
-                        help="number of time samples used for error comparison "
-                             "(default: %(default)s)")
-    args = parser.parse_args()
+def pick_reference(run, runs, gt_names):
+    """First reference in gt_names with the same starting wave and viscosity as `run`."""
+    for name in gt_names:
+        ref = runs.get(name)
+        if (
+            ref is not None
+            and run["ic_key"] is not None
+            and ref["ic_key"] == run["ic_key"]
+            and abs(ref["nu"] - run["nu"]) < 1e-12
+        ):
+            return ref, True
+    # no match: fall back to the first available reference so the row still exists
+    for name in gt_names:
+        if name in runs:
+            return runs[name], False
+    return None, False
 
-    data_dir = Path(args.data_dir)
-    if not data_dir.is_dir():
-        print(f"error: data directory not found: {data_dir}", file=sys.stderr)
-        sys.exit(1)
 
+def evaluate_folder(data_dir, gt_names, output, num_eval_times):
+    """Evaluate every run in data_dir. Returns the results DataFrame (or None)."""
     runs = {}
     for entry in sorted(data_dir.iterdir()):
         if not entry.is_dir():
@@ -356,40 +385,48 @@ def main():
         if run is not None:
             runs[entry.name] = run
 
-    if args.gt not in runs:
+    references = [name for name in gt_names if name in runs]
+    if not references:
         print(
-            f"error: ground truth run '{args.gt}' not found in {data_dir}. "
+            f"error: none of the reference runs {gt_names} were found in {data_dir}. "
             f"Available runs: {sorted(runs)}",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return None
 
-    gt = runs[args.gt]
-    num_eval = max(1, min(args.num_eval_times, gt["t"]))
-    gt["eval_idx"] = np.linspace(0, gt["t"] - 1, num_eval).astype(int)
+    for name in references:
+        ref = runs[name]
+        num_eval = max(1, min(num_eval_times, ref["t"]))
+        ref["eval_idx"] = np.linspace(0, ref["t"] - 1, num_eval).astype(int)
 
-    for run in runs.values():
-        run["ic_matches_gt"] = (
-            run["ic_key"] is not None and run["ic_key"] == gt["ic_key"]
-        )
-
+    experiment_name = data_dir.name
     rows = []
     for run in runs.values():
-        metrics = compute_error_metrics(run, gt, gt["eval_idx"])
+        ref, matches = pick_reference(run, runs, references)
+        run["reference"] = ref
+        run["ic_matches_reference"] = matches
+        metrics = compute_error_metrics(run, ref, ref["eval_idx"])
         baseline = find_baseline(run, list(runs.values())) if run["use_nn"] else None
-        rows.append(build_row(run, gt, baseline, metrics))
+        rows.append(build_row(run, ref, baseline, metrics, experiment_name))
 
     df = pd.DataFrame(rows)
-
-    output = Path(args.output) if args.output else data_dir / "evaluation_results.csv"
+    output = Path(output) if output else data_dir / "evaluation_results.csv"
     df.to_csv(output, index=False)
+
+    print("=" * 80)
+    print(f"Experiment: {experiment_name}   ({data_dir})")
+    config_path = data_dir / "experiment_config.json"
+    if config_path.exists():
+        with open(config_path) as f:
+            config = json.load(f)
+        print(
+            f"viscosity = {config.get('kinematic_viscosity')}, "
+            f"end time = {config.get('end_time')}, "
+            f"seeds: nn = {config.get('nn_seed')}, dx = {config.get('dx_seed')}"
+        )
     print(f"Wrote metrics CSV to: {output}")
 
-    if df.empty:
-        print("No runs evaluated.", file=sys.stderr)
-        sys.exit(0)
-
-    print_run_table(df, args.gt)
+    print_run_table(df)
     print_improvement_table(df)
 
     missing_baseline = df[(df["use_nn"]) & (df["baseline_run"] == "")]
@@ -399,6 +436,72 @@ def main():
             + ", ".join(missing_baseline["run_name"])
             + " (improvement columns left blank)."
         )
+    return df
+
+
+def list_experiments():
+    if not EXPERIMENTS_DIR.is_dir():
+        return []
+    return sorted(p for p in EXPERIMENTS_DIR.iterdir() if p.is_dir())
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--experiment",
+                        help="experiment folder name inside data/experiments (e.g. nu_0p03_t_0p125)")
+    target.add_argument("--all", action="store_true",
+                        help="evaluate every experiment inside data/experiments")
+    target.add_argument("--list", action="store_true",
+                        help="list the experiments inside data/experiments and exit")
+    target.add_argument("--data-dir",
+                        help="any folder of run directories (default: data/)")
+    parser.add_argument("--gt", nargs="+", default=DEFAULT_GT_NAMES,
+                        help="reference run names, in order of preference (default: %(default)s)")
+    parser.add_argument("--output", default=None,
+                        help="CSV output path (default: <folder>/evaluation_results.csv)")
+    parser.add_argument("--num-eval-times", type=int, default=DEFAULT_NUM_EVAL_TIMES,
+                        help="number of time samples used for error comparison "
+                             "(default: %(default)s)")
+    args = parser.parse_args()
+
+    if args.list:
+        experiments = list_experiments()
+        if not experiments:
+            print(f"No experiments found in {EXPERIMENTS_DIR}/")
+        for path in experiments:
+            done = "evaluated" if (path / "evaluation_results.csv").exists() else "not evaluated yet"
+            print(f"  {path.name:30s} ({done})")
+        return
+
+    if args.all:
+        folders = list_experiments()
+        if not folders:
+            print(f"error: no experiments found in {EXPERIMENTS_DIR}/", file=sys.stderr)
+            sys.exit(1)
+        if args.output:
+            print("note: --output is ignored with --all (each experiment gets its own CSV)")
+        for folder in folders:
+            evaluate_folder(folder, args.gt, None, args.num_eval_times)
+            print()
+        return
+
+    if args.experiment:
+        data_dir = EXPERIMENTS_DIR / args.experiment
+    else:
+        data_dir = Path(args.data_dir or DEFAULT_DATA_DIR)
+
+    if not data_dir.is_dir():
+        print(f"error: folder not found: {data_dir}", file=sys.stderr)
+        if args.experiment:
+            print("Available experiments: " + ", ".join(p.name for p in list_experiments()),
+                  file=sys.stderr)
+        sys.exit(1)
+
+    if evaluate_folder(data_dir, args.gt, args.output, args.num_eval_times) is None:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
