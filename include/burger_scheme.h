@@ -27,6 +27,9 @@ public:
     // get the name of the scheme
     virtual std::string getName() const = 0;
 
+    // whether this scheme calls the neural network during the solve
+    virtual bool usesNN() const { return use_nn; }
+
 protected:
     bool use_nn;
 
