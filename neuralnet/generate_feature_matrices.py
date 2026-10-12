@@ -52,9 +52,14 @@ def reverse_engineer_cq(dt, dx, u_i, u_next_i, u_i_minus_1, u_i_plus_1, nu=0):
         with np.errstate(divide='ignore', invalid='ignore'):
             cq_array[valid_mask] = numerator[valid_mask] / denominator[valid_mask]
         
-        # Apply magnitude threshold
+        # cq is a smoothing amount: never train on negative targets
         cq_result = cq_array.copy()
-        cq_result[(cq_array < 0) | (cq_array >= CQ_MAX_MAGNITUDE)] = np.nan
+        if CQ_NEGATIVE_HANDLING == "clip":
+            cq_result[cq_array < 0] = 0.0
+        else:
+            cq_result[cq_array < 0] = np.nan
+        # Apply magnitude threshold
+        cq_result[cq_array >= CQ_MAX_MAGNITUDE] = np.nan
         
         return cq_result
     else:
@@ -76,7 +81,14 @@ def reverse_engineer_cq(dt, dx, u_i, u_next_i, u_i_minus_1, u_i_plus_1, nu=0):
 
         cq = numerator / denominator
 
-        if abs(cq) >= CQ_MAX_MAGNITUDE:
+        # cq is a smoothing amount: never train on negative targets
+        if cq < 0:
+            if CQ_NEGATIVE_HANDLING == "clip":
+                cq = 0.0
+            else:
+                return None
+
+        if cq >= CQ_MAX_MAGNITUDE:
             return None
 
         return cq
@@ -224,6 +236,8 @@ if __name__ == "__main__":
 
     print(f"X shape: {X.shape} | y shape: {y.shape}")
     print(f"y mean: {y.mean():.4f}, std: {y.std():.4f}, min: {y.min():.4f}, max: {y.max():.4f}")
+    if y.min() < 0:
+        raise ValueError("Negative cq targets found; check CQ_NEGATIVE_HANDLING in constants.py")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     np.savez(FEATURE_MATRICES_PATH, X=X, y=y)

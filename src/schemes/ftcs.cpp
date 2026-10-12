@@ -49,19 +49,16 @@ double FTCS::calculateArtificialViscosity(const std::vector<double>& u, double c
             return ((idx % n) + n) % n;
         };
 
-        int i_minus_1 = wrap(i - 1);
-        int i_plus_1 = wrap(i + 1);
-
-        double uxx = (u[i_plus_1] - 2.0 * u[i] + u[i_minus_1]) / (spatial_step_size * spatial_step_size);
-
+        // Must match generate_feature_matrices.py exactly:
+        // dt, dx, u_i, (u_{i+r} - u_i) for r = -U_RADIUS..-1 and 1..U_RADIUS, nu
         std::vector<float> features;
         features.push_back(static_cast<float>(time_step_size));
         features.push_back(static_cast<float>(spatial_step_size));
-        features.push_back(static_cast<float>(ux));
-        features.push_back(static_cast<float>(uxx));
+        features.push_back(static_cast<float>(u[i]));
 
         for (int r = -U_RADIUS; r <= U_RADIUS; ++r) {
-            features.push_back(static_cast<float>(u[wrap(i + r)]));
+            if (r == 0) continue;   // center difference is always 0, so Python drops it
+            features.push_back(static_cast<float>(u[wrap(i + r)] - u[i]));
         }
 
         features.push_back(static_cast<float>(kinematic_viscosity));
@@ -69,6 +66,8 @@ double FTCS::calculateArtificialViscosity(const std::vector<double>& u, double c
         torch::Tensor input = torch::from_blob(features.data(), {1, (long)features.size()}).clone();
         auto output = model.forward({input}).toTensor();
         cq = static_cast<double>(output.item<float>());
+        cq = std::max(cq, 0.0);   // negative cq = negative viscosity (anti-smoothing), never allow it
+        
         // uncomment if you want to see the actual cq values the network is pumping out
         // auto flat = input.flatten();
         // for (int j = 0; j < flat.size(0); ++j) {

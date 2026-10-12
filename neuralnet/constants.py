@@ -44,6 +44,11 @@ BETA = 0.2
 COARSENESS_MULTIPLIERS = list(range(1, 65))  # 1 to 64 inclusive
 CQ_DENOMINATOR_EPSILON = 1e-8
 CQ_MAX_MAGNITUDE = 5.0
+# What to do with training points whose reverse-engineered cq is negative.
+# cq is a smoothing amount, so a negative value (anti-smoothing) is never a valid target.
+#   "drop": remove those points from the training data
+#   "clip": keep them with a target of 0 ("add no extra smoothing here")
+CQ_NEGATIVE_HANDLING = "drop"
 # how many extra features to have around the center
 # so like if 3 we will have our center and 3 more in each direction
 U_RADIUS = 4
