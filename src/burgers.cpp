@@ -56,17 +56,19 @@ void BurgersSolver1d::solve(double cq) {
     nan_detected = false;
     num_domain_points = std::floor(domain_length / spatial_step_size);
     u.assign(num_domain_points, 0.0);
-
-    double dt_advection = ALPHA * spatial_step_size / max_u;
-    double effective_viscosity = std::max(kinematic_viscosity, 1e-8);
-    double dt_diffusion = BETA * (spatial_step_size * spatial_step_size) / effective_viscosity;
-    double time_step_size = std::min(dt_advection, dt_diffusion);
-
+  
+    double max_u_safe = std::max(max_u, 1e-8);
+    double effective_viscosity = std::max(kinematic_viscosity, 0.0);    
+    double time_step_size = 1.0 / (
+    max_u_safe / (ALPHA * spatial_step_size)
+    + 2.0 * effective_viscosity
+      / (BETA * spatial_step_size * spatial_step_size)
+    );                                                   
     computed_time_step_size = time_step_size;
 
     std::cout << "Computing with " << num_domain_points << " domain points.\n";
-    std::cout << "max_u = " << max_u << ", dt_advection = " << dt_advection
-              << ", dt_diffusion = " << dt_diffusion << " => using dt = " << time_step_size << "\n";
+    std::cout << "max_u = " << max_u
+          << ", using dt = " << time_step_size << "\n";
 
     std::cout << "Setting initial conditions...\n";
     for (int i = 0; i < num_domain_points; ++i) {
