@@ -69,6 +69,11 @@ cd build
 cmake ..
 ```
 
+When no build type is given, CMake defaults to `Release` (`-O3 -DNDEBUG`).
+Without those flags the solver kernels run several times slower. To build a
+debuggable binary instead, pass `-DCMAKE_BUILD_TYPE=Debug` (or
+`RelWithDebInfo` for optimized code with debug info).
+
 4. Compile the project:
 ```bash
 make

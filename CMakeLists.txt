@@ -9,6 +9,19 @@ project(
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Default to an optimized build. Without this, a plain `cmake ..` produces an
+# unoptimized binary (no -O flags), which makes the numerical kernels several
+# times slower. Single-config generators only; multi-config generators (e.g.
+# Visual Studio) pick the configuration at build time instead.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE
+        Release
+        CACHE STRING "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo
+                                                 MinSizeRel)
+    message(STATUS "No build type specified, defaulting to ${CMAKE_BUILD_TYPE}")
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_compile_definitions(
