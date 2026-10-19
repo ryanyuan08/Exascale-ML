@@ -9,6 +9,11 @@
 FTCS::FTCS(bool use_nn) : BurgerScheme(use_nn) {
 
     if (use_nn) {
+        // Each timestep forwards a small batch (only cells in compression), so
+        // Torch's intra-op thread pool costs more than it saves and made run
+        // times vary by up to an order of magnitude. One thread is faster and
+        // deterministic for this workload.
+        torch::set_num_threads(1);
         model = torch::jit::load(MODEL_PATH);
         model.eval();
     }
