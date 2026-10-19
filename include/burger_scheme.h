@@ -51,6 +51,19 @@ class FTCS : public BurgerScheme {
   protected:
     mutable torch::jit::script::Module model;
 
+    // Reusable scratch buffers for the batched NN path. They are members so a
+    // solve does not allocate a feature matrix and a tensor per grid point.
+    // Each element is one grid cell in compression (ux < 0); cells in expansion
+    // get no artificial viscosity and are skipped entirely.
+    mutable std::vector<int> compression_indices_;
+    mutable std::vector<double> ux_buffer_;
+    mutable std::vector<float> feature_buffer_;
+    mutable std::vector<float> cq_buffer_;
+
+    // Number of input features per cell: dt, dx, u_i, the U_RADIUS-wide
+    // difference stencil on each side, and nu.
+    static constexpr int FEATURE_COUNT = 4 + 2 * U_RADIUS;
+
     double calculateArtificialViscosity(const std::vector<double> &u, double cq, double spatial_step_size,
                                         double time_step_size, int i, int num_domain_points,
                                         double kinematic_viscosity) const override;
