@@ -10,6 +10,96 @@ Burgers' equation is a fundamental partial differential equation used in fluid m
 
 This makes it useful for understanding shock waves, traffic flow, and basic fluid dynamics.
 
+# Exascale-ML: Learned Artificial Viscosity for Burgers' Equation
+
+A C++ solver for the 1D viscous Burgers' equation, paired with a neural network that learns how much artificial viscosity a cheap finite-difference scheme needs to capture shocks accurately.
+
+Simple explicit schemes like FTCS are fast, but they break down near shocks unless you add **artificial viscosity**: extra smoothing scaled by a coefficient `cq`. Too little `cq` and the solution oscillates or blows up; too much and the shock gets smeared out. Normally `cq` is a single hand-tuned constant. This project instead trains a network to predict `cq` **per grid cell, per timestep**, using an accurate Godunov solver as the ground truth. The goal is to run FTCS on a coarse grid and still match a fine, accurate solution.
+
+## Pipeline Overview
+
+```
+[0] Setup & build
+    scripts/setup_deps.py              → lib/  (torch + Python packages)
+    CMakeLists.txt  (cmake .. && make) → build/training_data_generator
+                                         build/burgers
+        │
+        ▼
+[1] Generate training data                                   C++ · Godunov
+    build/training_data_generator
+      src/training_data_generator.cpp
+      src/initial_condition_generator.cpp   (random sine-sum waves)
+      src/schemes/godunov.cpp               (accurate reference scheme)
+                                       → training_data/sample_XXXXXX/
+                                            ├── solution.bin
+                                            └── metadata.json
+        │
+        ▼
+[2] Build feature matrices                                   Python
+    neuralnet/generate_feature_matrices.py
+      neuralnet/burgers_solution.py         (loads solution.bin + metadata)
+      neuralnet/constants.py                (shared settings)
+                                       → neuralnet/output/feature_matrices.npz
+        │
+        ▼
+[3] Train the network                                        Python · PyTorch
+    neuralnet/train.py
+      neuralnet/nn.py                       (ArtificialViscosityNet)
+                                       → neuralnet/output/model.pt
+                                         neuralnet/output/losses.png
+        │
+        │   steps 2 and 3 run together with scripts/start_training.py
+        ▼
+[4] Run experiments                                          C++
+    build/burgers
+      src/main.cpp                          (experiment runner)
+      src/schemes/ftcs.cpp                  (FTCS(true) loads model.pt)
+                                       → data/experiments/<name>/
+                                            ├── experiment_config.json
+                                            └── <run>/
+                                                 ├── solution.bin
+                                                 └── metadata.json
+        │
+        ▼
+[5] Evaluate one experiment                                  Python
+    evaluate.py                        → data/experiments/<name>/evaluation_results.csv
+        │
+        ▼
+[6] Compare all experiments                                  Python
+    scripts/compare_experiments.py     → results/*.csv
+                                         results/*.png
+
+    Anytime: visualizer/visualize.py  — animate any run folder from step 1 or 4
+```
+
+## Running the Pipeline
+
+| Stage | Command | Run from |
+|---|---|---|
+| 0. Install dependencies | `python3 scripts/setup_deps.py` | repo root |
+| 0. Build | `mkdir build && cd build && cmake .. && make` | repo root |
+| 1. Generate training data | `./training_data_generator --samples 100` | `build/` |
+| 2–3. Features + training | `python3 scripts/start_training.py` | repo root |
+| 4. Run experiments | `./burgers --nu 0.03` | `build/` |
+| 5. Evaluate | `PYTHONPATH=lib/python python3 evaluate.py --experiment nu_0p03_t_0p125` | repo root |
+| 6. Compare | `PYTHONPATH=lib/python python3 scripts/compare_experiments.py` | repo root |
+
+`./burgers` loads `neuralnet/output/model.pt` at runtime, so after retraining you can rerun experiments without rebuilding.
+
+## How the Pipeline Works
+
+1. **Generate training data.** The generator creates random initial waves, each a sum of sine terms with random amplitudes, frequencies, and phases. For each wave it picks a random grid spacing `dx` and derives the viscosity from a Reynolds number. It then solves it with the Godunov scheme, which uses an exact Riemann solver and handles shocks without artificial viscosity. These solutions are the "truth" the network learns from.
+
+2. **Build feature matrices.** Each Godunov solution is resampled onto a coarser grid (1–64× coarser). For every cell in compression (`∂u/∂x < 0`, where shocks form), the script solves the FTCS update equation backwards. This gives the exact `cq` that would have made FTCS land on the Godunov value at the next timestep. Each row of features is `dt`, `dx`, `u_i`, the differences to 4 neighbors on each side, and `ν`. The target is that `cq`.
+
+3. **Train the network.** A fully connected network (6 hidden layers of 128) learns to map those features to `cq`. A Softplus output keeps `cq` non-negative. The input and output scaling are baked into the exported TorchScript `model.pt`, so the C++ side can feed in raw values.
+
+4. **Run experiments.** `./burgers` solves the same initial wave several ways: Godunov on a fine grid as the reference, and FTCS on coarser grids, with and without the network. In NN mode, FTCS gathers every compression cell each timestep and gets all their `cq` values from one batched forward pass. Each experiment is saved in its own folder. Existing runs are skipped, so an interrupted experiment can be resumed.
+
+5. **Evaluate.** `evaluate.py` interpolates every run onto its Godunov reference grid and computes the error: relative L2, mean absolute, and max absolute. For each NN run, it reports how much the error dropped compared with the matching non-NN FTCS run, and what the network costs in runtime.
+
+6. **Compare.** `compare_experiments.py` combines the evaluations from every experiment. It plots error vs. grid spacing, NN improvement vs. grid spacing, and runtime vs. error.
+
 ## Project Structure
 
 ```
