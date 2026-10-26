@@ -12,36 +12,40 @@
     - Periodic boundary conditions
     - No artificial viscosity
 */
-
-void Godunov::calculateNextU(const std::vector<double>& u, std::vector<double>& u_next, double /*cq (unused)*/, int n /* size data array */, double dt, double dx, double nu /* kinematic_viscosity */)
+void Godunov::calculateNextU(
+    const std::vector<double>& u,
+    std::vector<double>& u_next,
+    double /*cq*/,
+    int n,
+    double dt,
+    double dx,
+    double nu)
 {
-    // Interfaces: between i and i+1 for i=0..n-3, plus periodic interface (n-2, 0)
-    std::vector<double> F(n - 1);
+    // Calculate the Godunov flux at each interface.
+    // Periodic boundary conditions connect the last point to the first.
+    std::vector<double> F(n);
 
-    for (int i = 0; i < n - 2; ++i) {
-        F[i] = godunovFlux(u[i], u[i + 1]);
+    for (int i = 0; i < n; ++i) {
+        int ip = (i + 1) % n;
+        F[i] = godunovFlux(u[i], u[ip]);
     }
-    F[n - 2] = godunovFlux(u[n - 2], u[0]);  // periodic interface
 
-    // Update ALL physical cells: i = 0..n-2
-    for (int i = 0; i <= n - 2; ++i) {
-        int ip = (i == n - 2) ? 0     : i + 1;
-        int im = (i == 0)     ? n - 2 : i - 1;
+    // Update every grid point using convection and diffusion.
+    for (int i = 0; i < n; ++i) {
+        // Neighboring indices with periodic boundary conditions.
+        int ip = (i + 1) % n;
+        int im = (i - 1 + n) % n;
 
-        // Right interface flux is F[i]
-        double F_right = (i == n - 2) ? F[n - 2] : F[i];
-        // Left interface flux is F[i-1], except for i=0 where it’s the periodic interface
-        double F_left  = (i == 0)     ? F[n - 2] : F[i - 1];
+        // Convective term: conservative Godunov flux difference.
+        double convective = -(dt / dx) * (F[i] - F[im]);
 
-        double convective = -(dt / dx) * (F_right - F_left);
+        // Diffusion term: centered finite-difference approximation.
+        double diffusion = (nu * dt / (dx * dx))
+                         * (u[ip] - 2.0 * u[i] + u[im]);
 
-        double diffusion  = nu * dt / (dx * dx) * (u[ip] - 2.0 * u[i] + u[im]);
-
+        // Advance the solution by one time step.
         u_next[i] = u[i] + convective + diffusion;
     }
-
-    // Enforce periodic duplicate point for convenience
-    u_next[n - 1] = u_next[0];
 }
 
 // Exact Godunov flux for Burgers equation
