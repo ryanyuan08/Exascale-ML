@@ -81,6 +81,10 @@ def reverse_engineer_cq(dt, dx, u_i, u_next_i, u_i_minus_1, u_i_plus_1, nu=0):
 
         cq = numerator / denominator
 
+        if not np.isfinite(cq):
+            return None
+
+        if cq < 0 or cq >= CQ_MAX_MAGNITUDE:
         # cq is a smoothing amount: never train on negative targets
         if cq < 0:
             if CQ_NEGATIVE_HANDLING == "clip":
