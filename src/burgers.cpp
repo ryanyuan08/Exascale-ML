@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cmath>
+#include <chrono>
 #include <string>
 
 #include "burgers.h"
@@ -55,17 +56,19 @@ void BurgersSolver1d::solve(double cq) {
     nan_detected = false;
     num_domain_points = std::floor(domain_length / spatial_step_size);
     u.assign(num_domain_points, 0.0);
-
-    double dt_advection = ALPHA * spatial_step_size / max_u;
-    double effective_viscosity = std::max(kinematic_viscosity, 1e-8);
-    double dt_diffusion = BETA * (spatial_step_size * spatial_step_size) / effective_viscosity;
-    double time_step_size = std::min(dt_advection, dt_diffusion);
-
+  
+    double max_u_safe = std::max(max_u, 1e-8);
+    double effective_viscosity = std::max(kinematic_viscosity, 0.0);    
+    double time_step_size = 1.0 / (
+    max_u_safe / (ALPHA * spatial_step_size)
+    + 2.0 * effective_viscosity
+      / (BETA * spatial_step_size * spatial_step_size)
+    );                                                   
     computed_time_step_size = time_step_size;
 
     std::cout << "Computing with " << num_domain_points << " domain points.\n";
-    std::cout << "max_u = " << max_u << ", dt_advection = " << dt_advection
-              << ", dt_diffusion = " << dt_diffusion << " => using dt = " << time_step_size << "\n";
+    std::cout << "max_u = " << max_u
+          << ", using dt = " << time_step_size << "\n";
 
     std::cout << "Setting initial conditions...\n";
     for (int i = 0; i < num_domain_points; ++i) {
@@ -78,6 +81,7 @@ void BurgersSolver1d::solve(double cq) {
     solution_history.push_back(u);
 
     std::cout << "Solving...\n";
+    auto solve_start = std::chrono::steady_clock::now();
     for (int time_step = 0; time_step < time_steps; ++time_step) {
         scheme->calculateNextU(
             u, 
@@ -102,6 +106,8 @@ void BurgersSolver1d::solve(double cq) {
         std::swap(u, u_next);
         solution_history.push_back(u);
     }
+    auto solve_end = std::chrono::steady_clock::now();
+    runtime_seconds = std::chrono::duration<double>(solve_end - solve_start).count();
 }
 
 std::vector<std::vector<double>> BurgersSolver1d::getSolution() const {
@@ -161,7 +167,10 @@ void BurgersSolver1d::appendMetadata(nlohmann::json& metadata) const {
         {"domain_length", domain_length},
         {"kinematic_viscosity", kinematic_viscosity},
         {"reynolds_number", reynolds_number},
-        {"scheme_name", scheme->getName()}
+        {"scheme_name", scheme->getName()},
+        {"use_nn", scheme->usesNN()},
+        {"runtime_ms", runtime_seconds * 1000.0},
+        {"nan_detected", nan_detected}
     };
 }
 
@@ -179,6 +188,10 @@ int BurgersSolver1d::getNumDomainPoints() const {
 
 double BurgersSolver1d::getSpatialStepSize() const {
     return spatial_step_size;
+}
+
+double BurgersSolver1d::getRuntimeSeconds() const {
+    return runtime_seconds;
 }
 
 std::string BurgersSolver1d::getSchemeName() const {

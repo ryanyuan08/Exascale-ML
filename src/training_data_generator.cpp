@@ -19,7 +19,7 @@ const std::string TRAINING_DIR = "../training_data";
 
 // what scheme we are using for the configuration
 const auto SCHEME_FACTORY = []() {
-    return std::make_unique<FTCS>();
+    return std::make_unique<Godunov>();
 };
 
 // Reynolds numbers to choose between per sample; kinematic viscosity is then

@@ -22,11 +22,13 @@ struct SolverConfig {
 
 class BurgersSolver1d : public IMetadataProvider {
 
-private:
+public:
     // CFL safety factor for the advection stability condition: dt_advection = ALPHA * dx / max_u
     inline static const double ALPHA = 0.4;
     // Safety factor for the explicit diffusion stability condition: dt_diffusion = BETA * dx^2 / nu
     inline static const double BETA = 0.2;
+
+private:
 
     // scheme for solving
     std::unique_ptr<BurgerScheme> scheme;
@@ -60,6 +62,9 @@ private:
 
     // the time step size computed during solve() from the stability conditions
     double computed_time_step_size;
+
+    // wall-clock time spent in solve(), in seconds
+    double runtime_seconds = 0.0;
 
     // max absolute value of the initial condition, computed when IC is set
     double max_u = 0.0;
@@ -97,6 +102,8 @@ public:
     int getNumDomainPoints() const;
 
     double getSpatialStepSize() const;
+
+    double getRuntimeSeconds() const;
 
     std::string getSchemeName() const;
 };

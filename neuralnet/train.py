@@ -17,7 +17,7 @@ def cpu_train(X, y):
     X_train_scaled = X_scaler.fit_transform(X_train)
     X_test_scaled = X_scaler.transform(X_test)
 
-    y_scaler = StandardScaler()
+    y_scaler = StandardScaler(with_mean=False)  # divide by std only, so cq >= 0 <=> scaled target >= 0
     y_train_scaled = y_scaler.fit_transform(y_train.reshape(-1, 1)).ravel()
     y_test_scaled = y_scaler.transform(y_test.reshape(-1, 1)).ravel()
 
@@ -93,7 +93,7 @@ def gpu_train(X, y):
     X_test_scaled = X_scaler.transform(X_test).astype(np.float32)
     del X_test
 
-    y_scaler = StandardScaler()
+    y_scaler = StandardScaler(with_mean=False)  # divide by std only, so cq >= 0 <=> scaled target >= 0
     y_train_scaled = y_scaler.fit_transform(y_train.reshape(-1, 1)).ravel().astype(np.float32)
     del y_train
     y_test_scaled = y_scaler.transform(y_test.reshape(-1, 1)).ravel().astype(np.float32)
@@ -175,7 +175,9 @@ if __name__ == "__main__":
 
     X_mean = torch.tensor(X_scaler.mean_,  dtype=torch.float32)
     X_std  = torch.tensor(X_scaler.scale_, dtype=torch.float32)
-    y_mean = torch.tensor(y_scaler.mean_,  dtype=torch.float32)
+    # The y scaler only divides by std (with_mean=False), so nothing is added back.
+    # sklearn still fills in mean_ in that case, so it must NOT be used here.
+    y_mean = torch.tensor(0.0, dtype=torch.float32)
     y_std  = torch.tensor(y_scaler.scale_, dtype=torch.float32)
 
     print(f"X_mean: {X_mean}")
